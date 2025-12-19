@@ -12,113 +12,65 @@ pipeline {
     }
     
     stages {
-        stage('Checkout Code') {
+        stage('Checkout') {
             steps {
-                echo '📥 Checking out repository...'
-                checkout([
-                    $class: 'GitSCM',
-                    branches: [[name: '*/main']],
-                    userRemoteConfigs: [[
-                        url: 'https://github.com/NaveenBonthu/WeatherMap-API_jenkins.git'
-                    ]]
-                ])
-                
-                bat '''
-                echo Workspace Contents:
-                dir /B
-                echo.
-                echo Current Directory: 
-                cd
-                '''
+                echo '📥 Checking out code...'
+                checkout scm
+                bat 'echo Files: && dir /B'
             }
         }
         
-        stage('Verify Environment') {
+        stage('Verify Setup') {
             steps {
-                echo '🔍 Verifying Python environment...'
-                
+                echo '🔧 Verifying setup...'
                 bat """
-                echo Python Version:
                 \"%PYTHON%\" --version
-                
-                echo.
-                echo Checking installed packages:
-                \"%PYTHON%\" -c "import requests; print('requests:', requests.__version__)"
-                \"%PYTHON%\" -c "import pandas; print('pandas:', pandas.__version__)"
-                
-                echo.
-                echo Testing script exists:
-                if exist weather_collector.py (
-                    echo ✅ weather_collector.py found
-                    \"%PYTHON%\" -m py_compile weather_collector.py && echo ✅ Script syntax OK
-                ) else (
-                    echo ❌ weather_collector.py NOT FOUND
-                    exit 1
-                )
+                \"%PYTHON%\" -c "import requests; print('requests OK')"
+                \"%PYTHON%\" -c "import pandas; print('pandas OK')"
                 """
             }
         }
         
         stage('Run Weather Script') {
             steps {
-                echo "🌤️  Collecting weather for ${params.CITY}, ${params.COUNTRY}..."
-                
-                // SIMPLE ONE-LINE COMMAND - This will work!
+                echo "🌤️  Getting weather for ${params.CITY}, ${params.COUNTRY}..."
                 bat "\"%PYTHON%\" weather_collector.py --city \"${params.CITY}\" --country \"${params.COUNTRY}\" --api-key %WEATHER_API_KEY%"
             }
         }
         
-        stage('Check Results') {
+        stage('Verify & Archive') {
             steps {
-                echo '📊 Checking output...'
+                echo '📁 Processing results...'
                 
-                bat '''
-                echo Checking for output files:
-                dir *.csv *.txt *.log 2>nul || echo No output files found
-                
-                if exist weather_data.csv (
-                    echo ✅ SUCCESS: CSV file created!
-                    echo.
-                    echo File information:
-                    dir weather_data.csv
-                    echo.
-                    echo Preview (first 2 lines):
-                    set /p line1=<weather_data.csv
-                    echo 1: %line1%
-                    for /f "skip=1 tokens=1,2,3 delims=," %%a in (weather_data.csv) do (
-                        echo 2: %%a, %%b, %%c...
-                        goto :done
-                    )
-                    :done
-                ) else (
-                    echo ❌ ERROR: weather_data.csv was NOT created
-                    echo.
-                    echo Checking for Python error output...
-                    dir *.txt 2>nul || echo No error files
-                    exit 1
-                )
-                '''
-            }
-        }
-        
-        stage('Archive Artifacts') {
-            steps {
-                echo '📁 Archiving results...'
-                archiveArtifacts artifacts: 'weather_data.csv', fingerprint: true
-                echo '✅ Artifact archived'
+                script {
+                    // Check if CSV was created
+                    if (fileExists('weather_data.csv')) {
+                        echo '✅ Weather data collected successfully!'
+                        
+                        // Simple file check
+                        bat 'dir weather_data.csv'
+                        
+                        // Archive the CSV
+                        archiveArtifacts artifacts: 'weather_data.csv', fingerprint: true
+                        echo '📦 CSV file archived as build artifact'
+                    } else {
+                        echo '❌ ERROR: No CSV file created'
+                        error('Pipeline failed: No CSV output')
+                    }
+                }
             }
         }
     }
     
     post {
         always {
-            echo "🏁 Build #${env.BUILD_NUMBER} completed: ${currentBuild.currentResult}"
+            echo "Build #${env.BUILD_NUMBER} - ${currentBuild.currentResult}"
         }
         success {
-            bat 'echo ✅ PIPELINE SUCCESSFUL - Weather data collected!'
+            echo '🎉 PIPELINE SUCCESS! Weather data collected and saved.'
         }
         failure {
-            bat 'echo ❌ PIPELINE FAILED - Check console output above'
+            echo '⚠️  Pipeline completed with errors.'
         }
     }
 }
