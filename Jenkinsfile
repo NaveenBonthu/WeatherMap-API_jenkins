@@ -19,8 +19,9 @@ pipeline {
                 echo 'Checking out code...'
                 checkout scm
                 
-                bat 'python --version'
-                bat 'pip install requests pandas --quiet'
+                // FIXED: Use the PYTHON variable instead of just 'python'
+                bat "\"%PYTHON%\" --version"
+                bat "\"%PYTHON%\" -m pip install requests pandas --quiet"
                 
                 // Create output directory if it doesn't exist
                 bat 'if not exist "C:\\weather-jenkins" mkdir "C:\\weather-jenkins"'
