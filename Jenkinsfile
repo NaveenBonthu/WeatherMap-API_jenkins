@@ -30,7 +30,7 @@ pipeline {
                     $class: 'GitSCM',
                     branches: [[name: '*/main']],  // or '*/master'
                     userRemoteConfigs: [[
-                        url: 'https://github.com/NaveenBonthu/OpenWeatherMap-API',
+                        url: 'https://github.com/NaveenBonthu/WeatherMap-API_jenkins',
                         credentialsId: ''  // Add if private repo
                     ]],
                     extensions: [[
