@@ -9,79 +9,62 @@ pipeline {
     environment {
         PYTHON = "C:\\Python\\python.exe"
         WEATHER_API_KEY = credentials('weather-api-key')
-        OUTPUT_DIR = "C:\\weather-jenkins"
-        OUTPUT_FILE = "C:\\weather-jenkins\\weather_data.csv"
+        OUTPUT_PATH = "C:\\weather-jenkins\\weather_data.csv"
+        WORKSPACE_PATH = "weather_data_final.csv"  // File in workspace for archiving
     }
     
     stages {
-        stage('Checkout') {
+        stage('Setup') {
             steps {
                 echo 'Checking out code...'
                 checkout scm
-                bat 'echo Files: && dir /B'
-            }
-        }
-        
-        stage('Verify Setup') {
-            steps {
-                echo 'Verifying setup...'
-                bat """
-                \"%PYTHON%\" --version
-                \"%PYTHON%\" -c "import requests; print('requests OK')"
-                \"%PYTHON%\" -c "import pandas; print('pandas OK')"
-                """
+                
+                bat 'python --version'
+                bat 'pip install requests pandas --quiet'
                 
                 // Create output directory if it doesn't exist
-                bat "if not exist \"%OUTPUT_DIR%\" mkdir \"%OUTPUT_DIR%\""
+                bat 'if not exist "C:\\weather-jenkins" mkdir "C:\\weather-jenkins"'
             }
         }
         
-        stage('Run Weather Script') {
+        stage('Collect Weather') {
             steps {
                 echo "Getting weather for ${params.CITY}, ${params.COUNTRY}..."
-                script {
-                    // Update Python script to save to specific path
-                    // Option 1: Pass output path as argument if your script supports it
-                    bat "\"%PYTHON%\" weather_collector.py --city \"${params.CITY}\" --country \"${params.COUNTRY}\" --api-key %WEATHER_API_KEY% --output \"%OUTPUT_FILE%\""
-                    
-                    // Option 2: Move the file after creation
-                    bat """
-                    if exist weather_data.csv (
-                        echo Moving CSV to output directory...
-                        move /Y weather_data.csv \"%OUTPUT_FILE%\"
-                    )
-                    """
-                }
+                
+                // Run Python script
+                bat "\"%PYTHON%\" weather_collector.py --city \"${params.CITY}\" --country \"${params.COUNTRY}\" --api-key %WEATHER_API_KEY% --output \"%OUTPUT_PATH%\""
+                
+                // Also copy to workspace for archiving
+                bat "copy /Y \"%OUTPUT_PATH%\" \"%WORKSPACE_PATH%\""
             }
         }
         
         stage('Verify & Archive') {
             steps {
-                echo 'Processing results...'
-                
                 script {
-                    // Check if CSV was created in the output directory
-                    if (fileExists(env.OUTPUT_FILE)) {
-                        echo 'Weather data collected successfully!'
+                    // Check if file exists in output directory
+                    def outputExists = bat(script: 'if exist "%OUTPUT_PATH%" echo EXISTS', returnStdout: true).contains('EXISTS')
+                    
+                    if (outputExists) {
+                        echo 'SUCCESS: Weather data saved to C:\\weather-jenkins\\'
                         
                         // Show file info
-                        bat "dir \"%OUTPUT_FILE%\""
+                        bat 'dir "%OUTPUT_PATH%"'
                         
-                        // Archive the CSV from output directory
-                        archiveArtifacts artifacts: "C:\\weather-jenkins\\weather_data.csv", fingerprint: true
-                        echo 'CSV file archived as build artifact'
-                    } else {
-                        // Also check workspace as fallback
-                        if (fileExists('weather_data.csv')) {
-                            echo 'Found CSV in workspace, moving to output directory...'
-                            bat "move /Y weather_data.csv \"%OUTPUT_FILE%\""
-                            bat "dir \"%OUTPUT_FILE%\""
-                            archiveArtifacts artifacts: "C:\\weather-jenkins\\weather_data.csv", fingerprint: true
-                            echo 'CSV file archived as build artifact'
+                        // Also check workspace copy
+                        if (fileExists(env.WORKSPACE_PATH)) {
+                            echo 'Archiving from workspace...'
+                            archiveArtifacts artifacts: 'weather_data_final.csv', fingerprint: true
+                            echo 'CSV file archived successfully!'
                         } else {
-                            echo 'ERROR: No CSV file created'
-                            error('Pipeline failed: No CSV output')
+                            // Copy file to workspace if not there
+                            bat 'copy /Y "%OUTPUT_PATH%" weather_data_final.csv'
+                            archiveArtifacts artifacts: 'weather_data_final.csv', fingerprint: true
+                            echo 'CSV file archived successfully!'
                         }
+                    } else {
+                        echo 'ERROR: No CSV file created'
+                        error('Pipeline failed: No CSV output')
                     }
                 }
             }
@@ -94,7 +77,8 @@ pipeline {
         }
         success {
             echo 'PIPELINE SUCCESS! Weather data collected and saved.'
-            bat "echo CSV saved to: %OUTPUT_FILE%"
+            bat 'echo CSV saved to: C:\\weather-jenkins\\weather_data.csv'
+            bat 'echo Archived as: weather_data_final.csv'
         }
         failure {
             echo 'Pipeline completed with errors.'
